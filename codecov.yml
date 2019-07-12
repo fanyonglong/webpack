@@ -16,6 +16,9 @@ coverage:
       unit:
         flags: unit
         target: 0%
+      lint:
+        flags: lint
+        target: auto
     patch:
       default: off
       basic:
@@ -30,6 +33,10 @@ coverage:
         flags: unit
         target: 0%
         base: pr
+      lint:
+        flags: lint
+        target: 80%
+        base: pr
     changes:
       default: off
       basic:
@@ -41,9 +48,14 @@ coverage:
       unit:
         flags: unit
         target: 0%
+      lint:
+        flags: lint
+        target: 0%
 comment: off
 flags:
   basic:
     joined: false
   unit:
+    joined: false
+  lint:
     joined: false

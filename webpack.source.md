@@ -7,7 +7,7 @@
 	- [SingleEntryDependency](#SingleEntryDependency)
 	- [NormalModuleFactory](#NormalModuleFactory)
 
-// 引用:https://juejin.im/post/5bdc1c1651882516f5784c34
+
 ## 构建就是把源代码转换成发布到线上的可执行JavaScrip、CSS、HTML代码，包括如下内容：
 
 * 代码校验：在代码被提交到仓库前需要校验代码是否符合规范，以及单元测试是否通过。

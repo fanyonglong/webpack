@@ -1,9 +1,7 @@
 # webpac4 阅读
 
 - [webpac4 阅读](#webpac4-%E9%98%85%E8%AF%BB)
-	- [构建：](#%E6%9E%84%E5%BB%BA)
 	- [webapck核心概念](#webapck%E6%A0%B8%E5%BF%83%E6%A6%82%E5%BF%B5)
-	- [webpack工作过程](#webpack%E5%B7%A5%E4%BD%9C%E8%BF%87%E7%A8%8B)
 	- [Webpack](#Webpack)
 	- [Compiler 编译器](#Compiler-%E7%BC%96%E8%AF%91%E5%99%A8)
 	- [Compilation](#Compilation)
@@ -14,15 +12,6 @@
 
 
 
-## 构建：
-
-* 代码校验：在代码被提交到仓库前需要校验代码是否符合规范，以及单元测试是否通过。
-* 代码转换：TypeScript 编译成 JavaScript、SCSS 编译成 CSS 等。
-* 模块合并：在采用模块化的项目里会有很多个模块和文件，需要构建功能把模块分类合并成一个文件。
-* 代码分割：提取多个页面的公共代码、提取首屏不需要执行部分的代码让其异步加载。
-* 文件优化：压缩 JavaScript、CSS、HTML 代码，压缩合并图片等。
-* 自动刷新：监听本地源代码的变化，自动重新构建、刷新浏览器。
-* 自动发布：更新完代码后，自动构建出线上发布代码并传输给发布系统。
 
 ## webapck核心概念
 
@@ -33,15 +22,34 @@
 * Loader：模块转换器，用于把模块原内容按照需求转换成新内容。
 * Plugin：扩展插件，在Webpack构建流程中的特定时机注入扩展逻辑来改变构建结果或做你想要的事情。
 
-## webpack工作过程
-
-Webpack 启动后会从Entry里配置的Module开始递归解析 Entry 依赖的所有 Module。
-每找到一个 Module， 就会根据配置的Loader去找出对应的转换规则，对Module 进行转换后，再解析出当前 Module 依赖的 Module。 这些模块会以 Entry 为单位进行分组，一个 Entry 和其所有依赖的 Module 被分到一个组也就是一个 Chunk。
-最后 Webpack 会把所有 Chunk 转换成文件输出。 在整个流程中 Webpack 会在恰当的时机执行Plugin 里定义的逻辑。
-
 ## Webpack
-下面是webpack.js部分源码，可以从代码看编译一部分运行流程.
-从下这个例子去看webpack是怎么一步一步去解析.
+记住webpack上面几个概念，再去了解几个核心模块.
+1. Resolver 路径解析里面的选项相当webpackConfig里面resolver选项说明,
+2. Parser 源码抽象解析,webpack采用的是 acorn 库对js源码语法解析，抽象成标准estree
+3. NormalModuleFactory 创建模块，不同的依赖对象由不同的模块工厂创建
+  ```js
+	compiler.hooks.compilation.tap(
+			"SingleEntryPlugin",
+			(compilation, { normalModuleFactory }) => {
+				// 添加一个模块工厂,当添加依赖文件与入口文件时会根据实例对象的构造函数读取对应工厂进行create创建模块
+				compilation.dependencyFactories.set(
+					SingleEntryDependency,
+					normalModuleFactory
+				);
+			}
+		);
+   ```
+4. Module 
+
+几个插件顺序
+1. NodeEnvironmentPlugin 在webpack plugin执行前就执行，定义了文件系统环境
+2. JavascriptModulesPlugin 定义js文件解析器和源码生成器
+3. EntryOptionPlugin 解析入口文件
+4. HarmonyModulesPlugin es6模块解析
+5. CommonJsStuffPlugin commonjs模块解析
+
+
+
 
 ```js
 /**
@@ -49,6 +57,8 @@ Webpack 启动后会从Entry里配置的Module开始递归解析 Entry 依赖的
  * src
  *    b.js
  *    index.js
+ *	  util
+ *		index.js
  * 
  * ##index.js 
  * export default 'index';
@@ -61,7 +71,7 @@ var compiler=webpack({
             apply(compiler){
 					// 添加入口文件
 					 compiler.hooks.make.tapAsync('addEntry', (compilation, callback) => {
-						let entry=SingleEntryPlugin.createDependency('./src/index.js','index')
+						let entry=SingleEntryPlugin.createDependency('./src/b.js','index')
 						 compilation.addEntry(compiler.context,entry,'index',callback)
 						 callback();
 					});
@@ -147,7 +157,10 @@ this.hooks = {
 			/** @type {SyncHook<CompilationParams>} */
 			compile: new SyncHook(["params"]),//一个新的编译(compilation)创建之后，钩入(hook into) compiler。
 			/** @type {AsyncParallelHook<Compilation>} */
-			make: new AsyncParallelHook(["compilation"]),// 整合资源
+			/*
+			从entry到buildModule、processModuleDependencies(addModuleDependencies)整个过程
+			**/
+			make: new AsyncParallelHook(["compilation"]),// 整合资源,模块生成 
 			/** @type {AsyncSeriesHook<Compilation>} */
 			afterCompile: new AsyncSeriesHook(["compilation"]),
 
@@ -813,14 +826,14 @@ const myResolver = ResolverFactory.createResolver({
     alias: {
         Utilities: require.resolve('webpack')
     },
-    extensions:['.js','.json'],
+    extensions:['.js','.json'],// 文件扩展名
     aliasFields:['web'],
-    descriptionFiles:['package.json'],
-    enforceExtension:false,
-    modules:['node_modules'],
+    descriptionFiles:['package.json'],// 查找模块时文件说明
+    enforceExtension:false,// 是否强制扩展名 
+    modules:['node_modules'],// 当查找模块时优先目录
     mainFields: ['web', 'module','main'],// 读取模块是根据描述文件加载
     mainFiles:['index'], // 默认读取目录时加载的文件
-    resolveToContext:true,
+    resolveToContext:false,// 如果为正只查找目录
 	/* any other resoelver options here. Options/defaults can be seen below */
 });
 
@@ -899,8 +912,330 @@ myResolver.resolve(context, lookupStartPath, request, resolveContext, (
 ```
 
 ## NormalModuleFactory
+模块工厂通常要实现一个create方法
 
 ```js
+	constructor(context, resolverFactory, options) {
+		super();
+		this.hooks = {
+			resolver: new SyncWaterfallHook(["resolver"]),
+			factory: new SyncWaterfallHook(["factory"]),
+			beforeResolve: new AsyncSeriesWaterfallHook(["data"]),
+			afterResolve: new AsyncSeriesWaterfallHook(["data"]),
+			createModule: new SyncBailHook(["data"]),
+			module: new SyncWaterfallHook(["module", "data"]),
+			createParser: new HookMap(() => new SyncBailHook(["parserOptions"])),
+			parser: new HookMap(() => new SyncHook(["parser", "parserOptions"])),
+			createGenerator: new HookMap(
+				() => new SyncBailHook(["generatorOptions"])
+			),
+			generator: new HookMap(
+				() => new SyncHook(["generator", "generatorOptions"])
+			)
+		};
+		
+		this.resolverFactory = resolverFactory;
+		// module/rules/loader 规则
+		this.ruleSet = new RuleSet(options.defaultRules.concat(options.rules));
+		this.cachePredicate =
+			typeof options.unsafeCache === "function"
+				? options.unsafeCache
+				: Boolean.bind(null, options.unsafeCache);
+		this.context = context || "";
+		this.parserCache = Object.create(null);
+		this.generatorCache = Object.create(null);
+		this.hooks.factory.tap("NormalModuleFactory", () => (result, callback) => {
+			// 创建一个解析器
+			let resolver = this.hooks.resolver.call(null);
 
+			// Ignored
+			if (!resolver) return callback();
+			// 解析模块
+			resolver(result, (err, data) => {
+				if (err) return callback(err);
+
+				// Ignored
+				if (!data) return callback();
+
+				// direct module
+				if (typeof data.source === "function") return callback(null, data);
+
+				this.hooks.afterResolve.callAsync(data, (err, result) => {
+					if (err) return callback(err);
+
+					// Ignored
+					if (!result) return callback();
+
+					let createdModule = this.hooks.createModule.call(result);
+					if (!createdModule) {
+						if (!result.request) {
+							return callback(new Error("Empty dependency (no request)"));
+						}
+
+						createdModule = new NormalModule(result);
+					}
+
+					createdModule = this.hooks.module.call(createdModule, result);
+
+					return callback(null, createdModule);
+				});
+			});
+		});
+		this.hooks.resolver.tap("NormalModuleFactory", () => (data, callback) => {
+			const contextInfo = data.contextInfo;
+			const context = data.context;
+			const request = data.request;
+
+			const loaderResolver = this.getResolver("loader");
+			const normalResolver = this.getResolver("normal", data.resolveOptions);
+
+			let matchResource = undefined;
+			let requestWithoutMatchResource = request;
+			const matchResourceMatch = MATCH_RESOURCE_REGEX.exec(request);
+			if (matchResourceMatch) {
+				matchResource = matchResourceMatch[1];
+				if (/^\.\.?\//.test(matchResource)) {
+					matchResource = path.join(context, matchResource);
+				}
+				requestWithoutMatchResource = request.substr(
+					matchResourceMatch[0].length
+				);
+			}
+
+			const noPreAutoLoaders = requestWithoutMatchResource.startsWith("-!");
+			const noAutoLoaders =
+				noPreAutoLoaders || requestWithoutMatchResource.startsWith("!");
+			const noPrePostAutoLoaders = requestWithoutMatchResource.startsWith("!!");
+			let elements = requestWithoutMatchResource
+				.replace(/^-?!+/, "")
+				.replace(/!!+/g, "!")
+				.split("!");
+			let resource = elements.pop();
+			elements = elements.map(identToLoaderRequest);
+
+			asyncLib.parallel(
+				[
+					callback =>
+						this.resolveRequestArray(
+							contextInfo,
+							context,
+							elements,
+							loaderResolver,
+							callback
+						),
+					callback => {
+						if (resource === "" || resource[0] === "?") {
+							return callback(null, {
+								resource
+							});
+						}
+
+						normalResolver.resolve(
+							contextInfo,
+							context,
+							resource,
+							{},
+							(err, resource, resourceResolveData) => {
+								if (err) return callback(err);
+								callback(null, {
+									resourceResolveData,
+									resource
+								});
+							}
+						);
+					}
+				],
+				(err, results) => {
+					if (err) return callback(err);
+					let loaders = results[0];
+					const resourceResolveData = results[1].resourceResolveData;
+					resource = results[1].resource;
+
+					// translate option idents
+					try {
+						for (const item of loaders) {
+							if (typeof item.options === "string" && item.options[0] === "?") {
+								const ident = item.options.substr(1);
+								item.options = this.ruleSet.findOptionsByIdent(ident);
+								item.ident = ident;
+							}
+						}
+					} catch (e) {
+						return callback(e);
+					}
+
+					if (resource === false) {
+						// ignored
+						return callback(
+							null,
+							new RawModule(
+								"/* (ignored) */",
+								`ignored ${context} ${request}`,
+								`${request} (ignored)`
+							)
+						);
+					}
+
+					const userRequest =
+						(matchResource !== undefined ? `${matchResource}!=!` : "") +
+						loaders
+							.map(loaderToIdent)
+							.concat([resource])
+							.join("!");
+
+					let resourcePath =
+						matchResource !== undefined ? matchResource : resource;
+					let resourceQuery = "";
+					const queryIndex = resourcePath.indexOf("?");
+					if (queryIndex >= 0) {
+						resourceQuery = resourcePath.substr(queryIndex);
+						resourcePath = resourcePath.substr(0, queryIndex);
+					}
+
+					const result = this.ruleSet.exec({
+						resource: resourcePath,
+						realResource:
+							matchResource !== undefined
+								? resource.replace(/\?.*/, "")
+								: resourcePath,
+						resourceQuery,
+						issuer: contextInfo.issuer,
+						compiler: contextInfo.compiler
+					});
+					const settings = {};
+					const useLoadersPost = [];
+					const useLoaders = [];
+					const useLoadersPre = [];
+					for (const r of result) {
+						if (r.type === "use") {
+							if (r.enforce === "post" && !noPrePostAutoLoaders) {
+								useLoadersPost.push(r.value);
+							} else if (
+								r.enforce === "pre" &&
+								!noPreAutoLoaders &&
+								!noPrePostAutoLoaders
+							) {
+								useLoadersPre.push(r.value);
+							} else if (
+								!r.enforce &&
+								!noAutoLoaders &&
+								!noPrePostAutoLoaders
+							) {
+								useLoaders.push(r.value);
+							}
+						} else if (
+							typeof r.value === "object" &&
+							r.value !== null &&
+							typeof settings[r.type] === "object" &&
+							settings[r.type] !== null
+						) {
+							settings[r.type] = cachedCleverMerge(settings[r.type], r.value);
+						} else {
+							settings[r.type] = r.value;
+						}
+					}
+					asyncLib.parallel(
+						[
+							this.resolveRequestArray.bind(
+								this,
+								contextInfo,
+								this.context,
+								useLoadersPost,
+								loaderResolver
+							),
+							this.resolveRequestArray.bind(
+								this,
+								contextInfo,
+								this.context,
+								useLoaders,
+								loaderResolver
+							),
+							this.resolveRequestArray.bind(
+								this,
+								contextInfo,
+								this.context,
+								useLoadersPre,
+								loaderResolver
+							)
+						],
+						(err, results) => {
+							if (err) return callback(err);
+							if (matchResource === undefined) {
+								loaders = results[0].concat(loaders, results[1], results[2]);
+							} else {
+								loaders = results[0].concat(results[1], loaders, results[2]);
+							}
+							process.nextTick(() => {
+								const type = settings.type;
+								const resolveOptions = settings.resolve;
+								callback(null, {
+									context: context,
+									request: loaders
+										.map(loaderToIdent)
+										.concat([resource])
+										.join("!"),
+									dependencies: data.dependencies,
+									userRequest,
+									rawRequest: request,
+									loaders,
+									resource,
+									matchResource,
+									resourceResolveData,
+									settings,
+									type,
+									parser: this.getParser(type, settings.parser),
+									generator: this.getGenerator(type, settings.generator),
+									resolveOptions
+								});
+							});
+						}
+					);
+				}
+			);
+		});
+	}
+
+	create(data, callback) {
+		const dependencies = data.dependencies;// 依赖对象数组
+		const cacheEntry = dependencyCache.get(dependencies[0]);
+		if (cacheEntry) return callback(null, cacheEntry);
+		const context = data.context || this.context;
+		const resolveOptions = data.resolveOptions || EMPTY_RESOLVE_OPTIONS;
+		const request = dependencies[0].request;
+		const contextInfo = data.contextInfo || {};
+		// 调用解析钩子，通常可以在这做一个修改和拦截一些模块请求
+		this.hooks.beforeResolve.callAsync(
+			{
+				contextInfo,
+				resolveOptions,
+				context,
+				request,
+				dependencies
+			},
+			(err, result) => {
+				if (err) return callback(err);
+
+				// Ignored
+				if (!result) return callback();
+				// 创建一个工厂方法
+				const factory = this.hooks.factory.call(null);
+
+				// Ignored
+				if (!factory) return callback();
+				// 生成模块
+				factory(result, (err, module) => {
+					if (err) return callback(err);
+
+					if (module && this.cachePredicate(module)) {
+						for (const d of dependencies) {
+							dependencyCache.set(d, module);
+						}
+					}
+
+					callback(null, module);
+				});
+			}
+		);
+	}
 
 ```

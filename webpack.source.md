@@ -1,14 +1,20 @@
 # webpac4 阅读
+
 - [webpac4 阅读](#webpac4-%E9%98%85%E8%AF%BB)
+	- [构建：](#%E6%9E%84%E5%BB%BA)
+	- [webapck核心概念](#webapck%E6%A0%B8%E5%BF%83%E6%A6%82%E5%BF%B5)
+	- [webpack工作过程](#webpack%E5%B7%A5%E4%BD%9C%E8%BF%87%E7%A8%8B)
 	- [Webpack](#Webpack)
-	- [Compiler](#Compiler)
+	- [Compiler 编译器](#Compiler-%E7%BC%96%E8%AF%91%E5%99%A8)
 	- [Compilation](#Compilation)
+	- [Parser源码AST抽象转换](#Parser%E6%BA%90%E7%A0%81AST%E6%8A%BD%E8%B1%A1%E8%BD%AC%E6%8D%A2)
 	- [Resolver](#Resolver)
 	- [SingleEntryDependency](#SingleEntryDependency)
 	- [NormalModuleFactory](#NormalModuleFactory)
 
 
-## 构建就是把源代码转换成发布到线上的可执行JavaScrip、CSS、HTML代码，包括如下内容：
+
+## 构建：
 
 * 代码校验：在代码被提交到仓库前需要校验代码是否符合规范，以及单元测试是否通过。
 * 代码转换：TypeScript 编译成 JavaScript、SCSS 编译成 CSS 等。
@@ -53,8 +59,26 @@ var compiler=webpack({
         // 定义自定义插件
         {
             apply(compiler){
-              
-            }
+					// 添加入口文件
+					 compiler.hooks.make.tapAsync('addEntry', (compilation, callback) => {
+						let entry=SingleEntryPlugin.createDependency('./src/index.js','index')
+						 compilation.addEntry(compiler.context,entry,'index',callback)
+						 callback();
+					});
+				
+					compiler.hooks.thisCompilation.tap('compilation', (compilation,{
+
+					 }) => {
+						 
+							// 给一个文件添加一个依赖模块
+ 							compilation.hooks.buildModule.tap('addDependency',(module)=>{
+								  	if(module.request.indexOf('src/index.js')!=-1){
+										var d=new HarmonyImportSideEffectDependency('./util',module,0,{});
+										module.addDependency(d);
+									  }
+							});
+					});
+            }	
         }
     ]
 });
@@ -89,19 +113,83 @@ compiler.run(callback);//编译
 
 
 
-## Compiler
+## Compiler 编译器
+常用钩子:
+```js
+this.hooks = {
+			/** @type {SyncBailHook<Compilation>} */
+			shouldEmit: new SyncBailHook(["compilation"]),//此时返回 true/false。 输出资源前
+			/** @type {AsyncSeriesHook<Stats>} */
+			done: new AsyncSeriesHook(["stats"]),//编译(compilation)完成。
+			/** @type {AsyncSeriesHook<>} */
+			additionalPass: new AsyncSeriesHook([]),
+			/** @type {AsyncSeriesHook<Compiler>} */
+			beforeRun: new AsyncSeriesHook(["compiler"]),//compiler.run() 执行之前，添加一个钩子。
+			/** @type {AsyncSeriesHook<Compiler>} */
+			run: new AsyncSeriesHook(["compiler"]),//开始读取 records 之前，钩入(hook into) compiler
+			/** @type {AsyncSeriesHook<Compilation>} */
+			emit: new AsyncSeriesHook(["compilation"]),// 生成资源到 output 目录之前。
+			/** @type {AsyncSeriesHook<Compilation>} */
+			afterEmit: new AsyncSeriesHook(["compilation"]),
+
+			/** @type {SyncHook<Compilation, CompilationParams>} */
+			//触发 compilation 事件之前执行（查看下面的 compilation）。 不会复制到子编译
+			thisCompilation: new SyncHook(["compilation", "params"]),
+			/** @type {SyncHook<Compilation, CompilationParams>} */
+			compilation: new SyncHook(["compilation", "params"]),//编译(compilation)创建之后，执行插件。
+			/** @type {SyncHook<NormalModuleFactory>} */
+			normalModuleFactory: new SyncHook(["normalModuleFactory"]),//NormalModuleFactory 创建之后，执行插件。
+			/** @type {SyncHook<ContextModuleFactory>}  */
+			contextModuleFactory: new SyncHook(["contextModulefactory"]),
+
+			/** @type {AsyncSeriesHook<CompilationParams>} */
+			beforeCompile: new AsyncSeriesHook(["params"]),//编译(compilation)参数创建之后，执行插件
+			/** @type {SyncHook<CompilationParams>} */
+			compile: new SyncHook(["params"]),//一个新的编译(compilation)创建之后，钩入(hook into) compiler。
+			/** @type {AsyncParallelHook<Compilation>} */
+			make: new AsyncParallelHook(["compilation"]),// 整合资源
+			/** @type {AsyncSeriesHook<Compilation>} */
+			afterCompile: new AsyncSeriesHook(["compilation"]),
+
+			/** @type {AsyncSeriesHook<Compiler>} */
+			// 监听模式下，一个新的编译(compilation)触发之后，执行一个插件，但是是在实际编译开始之前。
+			watchRun: new AsyncSeriesHook(["compiler"]),//
+			/** @type {SyncHook<Error>} */
+			failed: new SyncHook(["error"]),
+			/** @type {SyncHook<string, string>} */
+			invalid: new SyncHook(["filename", "changeTime"]),
+			/** @type {SyncHook} */
+			watchClose: new SyncHook([]),
+
+			// TODO the following hooks are weirdly located here
+			// TODO move them for webpack 5
+			/** @type {SyncHook} */
+			environment: new SyncHook([]),//environment 准备好之后，执行插件
+			/** @type {SyncHook} */
+			afterEnvironment: new SyncHook([]),//environment 安装完成之后，执行插件
+			/** @type {SyncHook<Compiler>} */
+			afterPlugins: new SyncHook(["compiler"]),//设置完初始插件之后，执行插件。
+			/** @type {SyncHook<Compiler>} */
+			afterResolvers: new SyncHook(["compiler"]),//resolver 安装完成之后，执行插件。
+			/** @type {SyncBailHook<string, Entry>} */
+			entryOption: new SyncBailHook(["context", "entry"])//在 webpack 选项中的 entry 配置项 处理过之后，执行插件。
+		};
+
+```
+子编译不会触发的钩子:`"make","compile","emit","afterEmit","invalid","done","thisCompilation"`
+
 ```js
 run(callback){
-
+	// 开始运行
     this.hooks.beforeRun.callAsync(this, err => {
 			if (err) return finalCallback(err);
-
+			// 运行
 			this.hooks.run.callAsync(this, err => {
 				if (err) return finalCallback(err);
-
+				// 读取记录列表
 				this.readRecords(err => {
 					if (err) return finalCallback(err);
-
+					//开始编译
 					this.compile(onCompiled);
 				});
 			});
@@ -146,10 +234,10 @@ compile(callback) {
 			// 编译,如果有异步编译需求，可以在此钩子下处理
 			this.hooks.make.callAsync(compilation, err => {
 				if (err) return callback(err);
-
+				// 编译完成
 				compilation.finish(err => {
 					if (err) return callback(err);
-
+					// 开始优化
 					compilation.seal(err => {
 						if (err) return callback(err);
 
@@ -167,6 +255,194 @@ compile(callback) {
 
 ```
 ## Compilation
+
+钩子
+```js
+this.hooks = {
+			/** @type {SyncHook<Module>} */
+			buildModule: new SyncHook(["module"]),//在模块构建开始之前触发。
+			/** @type {SyncHook<Module>} */
+			rebuildModule: new SyncHook(["module"]),//在重新构建一个模块之前触发。
+			/** @type {SyncHook<Module, Error>} */
+			failedModule: new SyncHook(["module", "error"]),//模块构建失败时执行。
+			/** @type {SyncHook<Module>} */
+			succeedModule: new SyncHook(["module"]),//模块构建成功时执行。
+
+			/** @type {SyncHook<Dependency, string>} */
+			addEntry: new SyncHook(["entry", "name"]),
+			/** @type {SyncHook<Dependency, string, Error>} */
+			failedEntry: new SyncHook(["entry", "name", "error"]),
+			/** @type {SyncHook<Dependency, string, Module>} */
+			succeedEntry: new SyncHook(["entry", "name", "module"]),
+
+			/** @type {SyncWaterfallHook<DependencyReference, Dependency, Module>} */
+			dependencyReference: new SyncWaterfallHook([
+				"dependencyReference",
+				"dependency",
+				"module"
+			]),
+
+			/** @type {AsyncSeriesHook<Module[]>} */
+			finishModules: new AsyncSeriesHook(["modules"]),//所有模块都完成构建。
+			/** @type {SyncHook<Module>} */
+			finishRebuildingModule: new SyncHook(["module"]),//一个模块完成重新构建。
+			/** @type {SyncHook} */
+			unseal: new SyncHook([]),//编译(compilation)开始接收新模块时触发。
+			/** @type {SyncHook} */
+			seal: new SyncHook([]),//编译(compilation)停止接收新模块时触发
+
+			/** @type {SyncHook} */
+			beforeChunks: new SyncHook([]),
+			/** @type {SyncHook<Chunk[]>} */
+			afterChunks: new SyncHook(["chunks"]),
+
+			/** @type {SyncBailHook<Module[]>} */
+			optimizeDependenciesBasic: new SyncBailHook(["modules"]),
+			/** @type {SyncBailHook<Module[]>} */
+			optimizeDependencies: new SyncBailHook(["modules"]),//依赖优化开始时触发。
+			/** @type {SyncBailHook<Module[]>} */
+			optimizeDependenciesAdvanced: new SyncBailHook(["modules"]),
+			/** @type {SyncBailHook<Module[]>} */
+			afterOptimizeDependencies: new SyncHook(["modules"]),
+
+			/** @type {SyncHook} */
+			optimize: new SyncHook([]),//优化阶段开始时触发。
+			/** @type {SyncBailHook<Module[]>} */
+			optimizeModulesBasic: new SyncBailHook(["modules"]),
+			/** @type {SyncBailHook<Module[]>} */
+			optimizeModules: new SyncBailHook(["modules"]),
+			/** @type {SyncBailHook<Module[]>} */
+			optimizeModulesAdvanced: new SyncBailHook(["modules"]),
+			/** @type {SyncHook<Module[]>} */
+			afterOptimizeModules: new SyncHook(["modules"]),
+
+			/** @type {SyncBailHook<Chunk[], ChunkGroup[]>} */
+			optimizeChunksBasic: new SyncBailHook(["chunks", "chunkGroups"]),
+			/** @type {SyncBailHook<Chunk[], ChunkGroup[]>} */
+			optimizeChunks: new SyncBailHook(["chunks", "chunkGroups"]),
+			/** @type {SyncBailHook<Chunk[], ChunkGroup[]>} */
+			optimizeChunksAdvanced: new SyncBailHook(["chunks", "chunkGroups"]),
+			/** @type {SyncHook<Chunk[], ChunkGroup[]>} */
+			afterOptimizeChunks: new SyncHook(["chunks", "chunkGroups"]),
+
+			/** @type {AsyncSeriesHook<Chunk[], Module[]>} */
+			optimizeTree: new AsyncSeriesHook(["chunks", "modules"]),
+			/** @type {SyncHook<Chunk[], Module[]>} */
+			afterOptimizeTree: new SyncHook(["chunks", "modules"]),
+
+			/** @type {SyncBailHook<Chunk[], Module[]>} */
+			optimizeChunkModulesBasic: new SyncBailHook(["chunks", "modules"]),
+			/** @type {SyncBailHook<Chunk[], Module[]>} */
+			optimizeChunkModules: new SyncBailHook(["chunks", "modules"]),
+			/** @type {SyncBailHook<Chunk[], Module[]>} */
+			optimizeChunkModulesAdvanced: new SyncBailHook(["chunks", "modules"]),
+			/** @type {SyncHook<Chunk[], Module[]>} */
+			afterOptimizeChunkModules: new SyncHook(["chunks", "modules"]),
+			/** @type {SyncBailHook} */
+			shouldRecord: new SyncBailHook([]),
+
+			/** @type {SyncHook<Module[], any>} */
+			reviveModules: new SyncHook(["modules", "records"]),
+			/** @type {SyncHook<Module[]>} */
+			optimizeModuleOrder: new SyncHook(["modules"]),
+			/** @type {SyncHook<Module[]>} */
+			advancedOptimizeModuleOrder: new SyncHook(["modules"]),
+			/** @type {SyncHook<Module[]>} */
+			beforeModuleIds: new SyncHook(["modules"]),
+			/** @type {SyncHook<Module[]>} */
+			moduleIds: new SyncHook(["modules"]),
+			/** @type {SyncHook<Module[]>} */
+			optimizeModuleIds: new SyncHook(["modules"]),
+			/** @type {SyncHook<Module[]>} */
+			afterOptimizeModuleIds: new SyncHook(["modules"]),
+
+			/** @type {SyncHook<Chunk[], any>} */
+			reviveChunks: new SyncHook(["chunks", "records"]),
+			/** @type {SyncHook<Chunk[]>} */
+			optimizeChunkOrder: new SyncHook(["chunks"]),
+			/** @type {SyncHook<Chunk[]>} */
+			beforeChunkIds: new SyncHook(["chunks"]),
+			/** @type {SyncHook<Chunk[]>} */
+			optimizeChunkIds: new SyncHook(["chunks"]),
+			/** @type {SyncHook<Chunk[]>} */
+			afterOptimizeChunkIds: new SyncHook(["chunks"]),
+
+			/** @type {SyncHook<Module[], any>} */
+			recordModules: new SyncHook(["modules", "records"]),
+			/** @type {SyncHook<Chunk[], any>} */
+			recordChunks: new SyncHook(["chunks", "records"]),
+
+			/** @type {SyncHook} */
+			beforeHash: new SyncHook([]),
+			/** @type {SyncHook<Chunk>} */
+			contentHash: new SyncHook(["chunk"]),
+			/** @type {SyncHook} */
+			afterHash: new SyncHook([]),
+			/** @type {SyncHook<any>} */
+			recordHash: new SyncHook(["records"]),
+			/** @type {SyncHook<Compilation, any>} */
+			record: new SyncHook(["compilation", "records"]),
+
+			/** @type {SyncHook} */
+			beforeModuleAssets: new SyncHook([]),
+			/** @type {SyncBailHook} */
+			shouldGenerateChunkAssets: new SyncBailHook([]),
+			/** @type {SyncHook} */
+			beforeChunkAssets: new SyncHook([]),
+			/** @type {SyncHook<Chunk[]>} */
+			additionalChunkAssets: new SyncHook(["chunks"]),
+
+			/** @type {AsyncSeriesHook} */
+			additionalAssets: new AsyncSeriesHook([]),
+			/** @type {AsyncSeriesHook<Chunk[]>} */
+			optimizeChunkAssets: new AsyncSeriesHook(["chunks"]),
+			/** @type {SyncHook<Chunk[]>} */
+			afterOptimizeChunkAssets: new SyncHook(["chunks"]),
+			/** @type {AsyncSeriesHook<CompilationAssets>} */
+			optimizeAssets: new AsyncSeriesHook(["assets"]),
+			/** @type {SyncHook<CompilationAssets>} */
+			afterOptimizeAssets: new SyncHook(["assets"]),
+
+			/** @type {SyncBailHook} */
+			needAdditionalSeal: new SyncBailHook([]),
+			/** @type {AsyncSeriesHook} */
+			afterSeal: new AsyncSeriesHook([]),
+
+			/** @type {SyncHook<Chunk, Hash>} */
+			chunkHash: new SyncHook(["chunk", "chunkHash"]),
+			/** @type {SyncHook<Module, string>} */
+			moduleAsset: new SyncHook(["module", "filename"]),
+			/** @type {SyncHook<Chunk, string>} */
+			chunkAsset: new SyncHook(["chunk", "filename"]),
+
+			/** @type {SyncWaterfallHook<string, TODO>} */
+			assetPath: new SyncWaterfallHook(["filename", "data"]), // TODO MainTemplate
+
+			/** @type {SyncBailHook} */
+			needAdditionalPass: new SyncBailHook([]),
+
+			/** @type {SyncHook<Compiler, string, number>} */
+			childCompiler: new SyncHook([
+				"childCompiler",
+				"compilerName",
+				"compilerIndex"
+			]),
+
+			// TODO the following hooks are weirdly located here
+			// TODO move them for webpack 5
+			/** @type {SyncHook<object, Module>} */
+			normalModuleLoader: new SyncHook(["loaderContext", "module"]),
+
+			/** @type {SyncBailHook<Chunk[]>} */
+			optimizeExtractedChunksBasic: new SyncBailHook(["chunks"]),
+			/** @type {SyncBailHook<Chunk[]>} */
+			optimizeExtractedChunks: new SyncBailHook(["chunks"]),
+			/** @type {SyncBailHook<Chunk[]>} */
+			optimizeExtractedChunksAdvanced: new SyncBailHook(["chunks"]),
+			/** @type {SyncHook<Chunk[]>} */
+			afterOptimizeExtractedChunks: new SyncHook(["chunks"])
+		};
+```
 ```js
 
 	finish(callback) {
@@ -522,6 +798,7 @@ addEntry(context, entry, name, callback) {
 		);
 	}
 ```
+## Parser源码AST抽象转换
 
 ## Resolver
 ```js

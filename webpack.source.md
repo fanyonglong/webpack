@@ -39,7 +39,8 @@
 			}
 		);
    ```
-4. Module 
+4. Module 模块添加依赖、添加代码码、运行loaders、源码语法解析(各种插件对表达式处理，例如解析代码中的import对模块添加依赖) dependencies、loaders,parser,generator
+
 
 几个插件顺序
 1. NodeEnvironmentPlugin 在webpack plugin执行前就执行，定义了文件系统环境
@@ -80,11 +81,13 @@ var compiler=webpack({
 
 					 }) => {
 						 
-							// 给一个文件添加一个依赖模块
+							// 给一个文件添加一个依赖模块和一段代码
  							compilation.hooks.buildModule.tap('addDependency',(module)=>{
 								  	if(module.request.indexOf('src/index.js')!=-1){
-										var d=new HarmonyImportSideEffectDependency('./util',module,0,{});
-										module.addDependency(d);
+										var m=new HarmonyImportSideEffectDependency('./util',module,0,{});
+										module.addDependency(m);
+									    const c = new ConstDependency("var $=window.jQuery;",0);		
+									    module.addDependency(c);
 									  }
 							});
 					});
